@@ -22,16 +22,7 @@ class OpenAICompatibleAdapter(BaseLLMAdapter):
     ) -> str:
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": message.role, "content": message.content}
-                if message.role != "tool"
-                else {
-                    "role": "tool",
-                    "name": message.name or "tool",
-                    "content": message.content,
-                }
-                for message in messages
-            ],
+            "messages": [self._serialize_message(message) for message in messages],
             "temperature": 0.2,
             "response_format": {"type": "json_object"},
         }
@@ -45,7 +36,24 @@ class OpenAICompatibleAdapter(BaseLLMAdapter):
                 headers=headers,
                 json=payload,
             )
-            response.raise_for_status()
+            if response.is_error:
+                raise RuntimeError(
+                    f"Provider error {response.status_code}: {response.text}"
+                )
             data = response.json()
             return data["choices"][0]["message"]["content"]
 
+    @staticmethod
+    def _serialize_message(message: AgentMessage) -> dict[str, str]:
+        # Many OpenAI-compatible providers accept the standard chat roles but
+        # reject raw tool-role messages unless they follow official function
+        # calling with tool_call_id. MMagent uses a custom JSON tool protocol,
+        # so we fold tool observations back into the conversation as user-visible
+        # context for the next reasoning turn.
+        if message.role == "tool":
+            tool_name = message.name or "tool"
+            return {
+                "role": "user",
+                "content": f"Tool result from {tool_name}:\n{message.content}",
+            }
+        return {"role": message.role, "content": message.content}

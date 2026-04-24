@@ -13,6 +13,14 @@ echo MMagent local startup
 echo ========================================
 echo.
 
+echo [0/4] Cleaning old local processes on ports %BACKEND_PORT% and %FRONTEND_PORT%...
+for %%P in (%BACKEND_PORT% %FRONTEND_PORT%) do (
+  for /f "tokens=5" %%I in ('netstat -ano ^| findstr /R /C:":%%P .*LISTENING"') do (
+    echo       stopping PID %%I on port %%P
+    taskkill /PID %%I /F >nul 2>nul
+  )
+)
+
 where python >nul 2>nul
 if errorlevel 1 (
   echo [ERROR] Python was not found. Please install Python 3.11+ and try again.
