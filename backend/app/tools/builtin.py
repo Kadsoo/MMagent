@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
+from app.core.config import Settings
+from app.services.docs_service import DocsService
+from app.services.time_service import TimeService
+from app.services.todo_service import TodoService
 from app.services.todo_store import TodoStore
+from app.services.web_search_service import WebSearchService
+from app.services.weather_service import WeatherService
+from app.tools.context import ToolContext
 from app.tools.registry import ToolRegistry
 from app.utils.safe_eval import safe_calculate
 
@@ -29,6 +34,11 @@ class SearchDocsArgs(BaseModel):
     query: str = Field(description="Keyword query for local knowledge documents")
 
 
+class WebSearchArgs(BaseModel):
+    query: str = Field(description="Search query for internet lookup")
+    max_results: int = Field(default=5, ge=1, le=8, description="Maximum related results")
+
+
 class TodoAddArgs(BaseModel):
     item: str = Field(min_length=1, description="Todo item text")
 
@@ -38,31 +48,42 @@ class TodoListArgs(BaseModel):
 
 
 class TodoDeleteArgs(BaseModel):
-    index: int = Field(ge=1, description="1-based todo index")
+    index: int = Field(ge=1, description="1-based todo index in the current user's todo list")
 
 
 class EmptyArgs(BaseModel):
     pass
 
 
-class MapLookupArgs(BaseModel):
-    location: str = Field(description="Game location, e.g. forest, castle, village")
-
-
-def create_default_registry(todo_store: TodoStore, data_dir: Path) -> ToolRegistry:
+def create_default_registry(
+    todo_store: TodoStore,
+    data_dir: Path,
+    settings: Settings | None = None,
+    todo_service: TodoService | None = None,
+    weather_service: WeatherService | None = None,
+    docs_service: DocsService | None = None,
+    web_search_service: WebSearchService | None = None,
+    time_service: TimeService | None = None,
+) -> ToolRegistry:
     registry = ToolRegistry()
+
+    resolved_weather_service = weather_service or _create_weather_service(settings)
+    resolved_docs_service = docs_service or DocsService(data_dir=data_dir)
+    resolved_web_search_service = web_search_service or WebSearchService()
+    resolved_time_service = time_service or TimeService()
+    resolved_todo_service = todo_service or TodoService(fallback_store=todo_store)
 
     registry.register(
         name="get_weather",
-        description="Return mock weather for a city.",
+        description="Fetch real current weather for a city through Open-Meteo.",
         args_model=WeatherArgs,
-        handler=get_weather,
+        handler=lambda args: resolved_weather_service.get_weather(args.city),
     )
     registry.register(
         name="get_time",
-        description="Return current local time for a city or IANA timezone.",
+        description="Return current local time for a city or IANA timezone using zoneinfo.",
         args_model=TimeArgs,
-        handler=get_time,
+        handler=lambda args: resolved_time_service.get_time(args.city, args.timezone),
     )
     registry.register(
         name="calculator",
@@ -72,27 +93,41 @@ def create_default_registry(todo_store: TodoStore, data_dir: Path) -> ToolRegist
     )
     registry.register(
         name="search_docs",
-        description="Search local project knowledge documents by keyword.",
+        description="Search real local project knowledge documents by keyword.",
         args_model=SearchDocsArgs,
-        handler=lambda args: search_docs(args, data_dir),
+        handler=lambda args: resolved_docs_service.search(args.query),
+    )
+    registry.register(
+        name="web_search",
+        description="Search the internet for topic summaries and related links.",
+        args_model=WebSearchArgs,
+        handler=lambda args: resolved_web_search_service.search(args.query, args.max_results),
     )
     registry.register(
         name="todo_add",
-        description="Add a todo item to the local todo store.",
+        description="Add a todo item for the current user. Uses MySQL when configured.",
         args_model=TodoAddArgs,
-        handler=lambda args: todo_store.add_item(args.item),
+        handler=lambda args, context: resolved_todo_service.add(
+            _require_context(context).user_id,
+            args.item,
+        ),
     )
     registry.register(
         name="todo_list",
-        description="List all todo items.",
+        description="List todo items for the current user. Uses MySQL when configured.",
         args_model=TodoListArgs,
-        handler=lambda args: {"items": todo_store.list_items(), "count": todo_store.count()},
+        handler=lambda args, context: resolved_todo_service.list(
+            _require_context(context).user_id
+        ),
     )
     registry.register(
         name="todo_delete",
-        description="Delete a todo item by 1-based index.",
+        description="Delete a todo item from the current user's list by 1-based index.",
         args_model=TodoDeleteArgs,
-        handler=lambda args: todo_store.delete_item(args.index),
+        handler=lambda args, context: resolved_todo_service.delete(
+            _require_context(context).user_id,
+            args.index,
+        ),
     )
     registry.register(
         name="get_system_status",
@@ -100,83 +135,12 @@ def create_default_registry(todo_store: TodoStore, data_dir: Path) -> ToolRegist
         args_model=EmptyArgs,
         handler=lambda args: get_system_status(registry),
     )
-    registry.register(
-        name="map_lookup",
-        description="Demo game-AI extension point for querying map observations.",
-        args_model=MapLookupArgs,
-        handler=map_lookup,
-    )
     return registry
-
-
-def get_weather(args: WeatherArgs) -> dict[str, Any]:
-    weather_data = {
-        "nanjing": {"temperature": "26C", "condition": "Sunny", "humidity": "48%"},
-        "beijing": {"temperature": "22C", "condition": "Cloudy", "humidity": "35%"},
-        "shanghai": {"temperature": "24C", "condition": "Light rain", "humidity": "71%"},
-        "shenzhen": {"temperature": "29C", "condition": "Humid", "humidity": "76%"},
-        "hangzhou": {"temperature": "25C", "condition": "Partly cloudy", "humidity": "63%"},
-        "tokyo": {"temperature": "20C", "condition": "Clear", "humidity": "52%"},
-        "new york": {"temperature": "18C", "condition": "Windy", "humidity": "44%"},
-    }
-    city_key = args.city.strip().lower()
-    payload = weather_data.get(
-        city_key,
-        {"temperature": "23C", "condition": "Unknown mock weather", "humidity": "50%"},
-    )
-    return {"city": args.city, **payload, "source": "mock"}
-
-
-def get_time(args: TimeArgs) -> dict[str, str]:
-    city_to_timezone = {
-        "nanjing": "Asia/Shanghai",
-        "beijing": "Asia/Shanghai",
-        "shanghai": "Asia/Shanghai",
-        "shenzhen": "Asia/Shanghai",
-        "hangzhou": "Asia/Shanghai",
-        "tokyo": "Asia/Tokyo",
-        "new york": "America/New_York",
-        "london": "Europe/London",
-    }
-    target = args.timezone or city_to_timezone.get((args.city or "").lower(), "UTC")
-    target, zone = _resolve_timezone(target)
-    now = datetime.now(zone)
-    return {
-        "city_or_timezone": args.city or target,
-        "timezone": target,
-        "local_time": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "iso": now.isoformat(),
-    }
 
 
 def calculator(args: CalculatorArgs) -> dict[str, Any]:
     value = safe_calculate(args.expression)
-    return {"expression": args.expression, "value": value}
-
-
-def search_docs(args: SearchDocsArgs, data_dir: Path) -> dict[str, Any]:
-    query = args.query.strip().lower()
-    files = list(data_dir.glob("*.md")) + list(data_dir.glob("*.txt"))
-    matches: list[dict[str, Any]] = []
-    query_terms = [term for term in query.split() if len(term) > 1]
-
-    for path in files:
-        text = path.read_text(encoding="utf-8")
-        lowered = text.lower()
-        score = sum(lowered.count(term) for term in query_terms)
-        if not score and query in lowered:
-            score = 1
-        if score:
-            snippet = _make_snippet(text, query_terms)
-            matches.append({"file": path.name, "score": score, "snippet": snippet})
-
-    matches.sort(key=lambda item: item["score"], reverse=True)
-    if matches:
-        summary = matches[0]["snippet"]
-    else:
-        summary = "No exact keyword match. Try queries like runtime, tool calling, registry, or game agent."
-
-    return {"query": args.query, "summary": summary, "matches": matches[:5]}
+    return {"expression": args.expression, "value": value, "source": "safe-ast"}
 
 
 def get_system_status(registry: ToolRegistry) -> dict[str, Any]:
@@ -188,63 +152,19 @@ def get_system_status(registry: ToolRegistry) -> dict[str, Any]:
     }
 
 
-def map_lookup(args: MapLookupArgs) -> dict[str, Any]:
-    maps = {
-        "forest": {
-            "summary": "two enemies near the north path and one health potion",
-            "enemies": [{"type": "slime", "x": 4, "y": 8}, {"type": "archer", "x": 7, "y": 9}],
-            "items": [{"name": "health_potion", "x": 2, "y": 3}],
-        },
-        "castle": {
-            "summary": "a locked gate, one elite guard, and a treasure chest",
-            "enemies": [{"type": "guard", "x": 5, "y": 2}],
-            "items": [{"name": "silver_key", "x": 1, "y": 6}],
-        },
-        "village": {
-            "summary": "no enemies, one merchant, and a quest board",
-            "enemies": [],
-            "items": [{"name": "quest_board", "x": 3, "y": 1}],
-        },
-        "森林": {
-            "summary": "two enemies near the north path and one health potion",
-            "enemies": [{"type": "slime", "x": 4, "y": 8}, {"type": "archer", "x": 7, "y": 9}],
-            "items": [{"name": "health_potion", "x": 2, "y": 3}],
-        },
-        "城堡": {
-            "summary": "a locked gate, one elite guard, and a treasure chest",
-            "enemies": [{"type": "guard", "x": 5, "y": 2}],
-            "items": [{"name": "silver_key", "x": 1, "y": 6}],
-        },
-    }
-    location = args.location.strip().lower()
-    info = maps.get(location, maps["forest"])
-    return {"location": args.location, **info}
+def _create_weather_service(settings: Settings | None) -> WeatherService:
+    if not settings:
+        return WeatherService()
+    return WeatherService(
+        provider=settings.weather_provider,
+        forecast_base_url=settings.weather_api_base_url,
+        geocoding_base_url=settings.weather_geocoding_base_url,
+        language=settings.weather_language,
+        api_key=settings.weather_api_key,
+    )
 
 
-def _make_snippet(text: str, terms: list[str]) -> str:
-    lowered = text.lower()
-    index = 0
-    for term in terms:
-        index = lowered.find(term)
-        if index >= 0:
-            break
-    start = max(index - 120, 0)
-    end = min(index + 280, len(text))
-    snippet = text[start:end].replace("\n", " ").strip()
-    return " ".join(snippet.split())
-
-
-def _resolve_timezone(target: str) -> tuple[str, tzinfo]:
-    try:
-        return target, ZoneInfo(target)
-    except Exception:
-        fixed_offsets = {
-            "UTC": timezone.utc,
-            "Asia/Shanghai": timezone(timedelta(hours=8), name="Asia/Shanghai"),
-            "Asia/Tokyo": timezone(timedelta(hours=9), name="Asia/Tokyo"),
-            "America/New_York": timezone(timedelta(hours=-4), name="America/New_York"),
-            "Europe/London": timezone(timedelta(hours=1), name="Europe/London"),
-        }
-        if target in fixed_offsets:
-            return target, fixed_offsets[target]
-        return "UTC", timezone.utc
+def _require_context(context: ToolContext | None) -> ToolContext:
+    if not context:
+        raise RuntimeError("Tool context is required for this operation.")
+    return context

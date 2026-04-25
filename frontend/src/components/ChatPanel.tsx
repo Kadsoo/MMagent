@@ -1,21 +1,25 @@
 import { FormEvent, useState } from "react";
-import type { ChatTurn } from "../types/api";
+import type { ConversationRun } from "../types/api";
 
 type ChatPanelProps = {
-  turns: ChatTurn[];
+  runs: ConversationRun[];
   loading: boolean;
+  historyLoading: boolean;
   error: string | null;
   starterPrompts: string[];
-  lastAnswer: string;
+  sessionTitle: string;
+  userId: string;
   onSend: (message: string) => Promise<void>;
 };
 
 export default function ChatPanel({
-  turns,
+  runs,
   loading,
+  historyLoading,
   error,
   starterPrompts,
-  lastAnswer,
+  sessionTitle,
+  userId,
   onSend
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
@@ -32,13 +36,26 @@ export default function ChatPanel({
 
   return (
     <section className="chat-panel">
+      <div className="chat-panel-header">
+        <div>
+          <span className="section-label">Conversation</span>
+          <h2>{sessionTitle}</h2>
+        </div>
+        <div className="user-pill">{userId}</div>
+      </div>
+
       <div className="conversation">
-        {turns.length === 0 ? (
+        {historyLoading ? (
+          <div className="loading-state">
+            <h2>Loading conversation</h2>
+            <p>Fetching this user&apos;s saved history and active session...</p>
+          </div>
+        ) : runs.length === 0 ? (
           <div className="empty-state">
             <h2>Run an agent task</h2>
             <p>
-              Ask for weather, time, calculations, local docs, todos, or map
-              observations. The right panel will show the JSON tool loop.
+              Ask for weather, time, calculations, local docs, web search, or
+              todos. This home page stays focused on conversation only.
             </p>
             <div className="prompt-grid">
               {starterPrompts.map((prompt) => (
@@ -54,15 +71,21 @@ export default function ChatPanel({
             </div>
           </div>
         ) : (
-          turns.map((turn) => (
-            <article className="turn" key={turn.id}>
+          runs.map((run, index) => (
+            <article
+              className="turn"
+              key={`${run.id ?? index}-${run.created_at}`}
+            >
               <div className="bubble user-bubble">
                 <span>User</span>
-                <p>{turn.user}</p>
+                <p>{run.user_input}</p>
               </div>
               <div className="bubble agent-bubble">
                 <span>Agent final answer</span>
-                <p>{turn.answer}</p>
+                <p>{run.final_answer}</p>
+              </div>
+              <div className="turn-meta">
+                Round {index + 1} · {new Date(run.created_at).toLocaleString()}
               </div>
             </article>
           ))
@@ -70,7 +93,6 @@ export default function ChatPanel({
       </div>
 
       {error ? <div className="error-line">{error}</div> : null}
-      {lastAnswer ? <div className="last-answer">Latest: {lastAnswer}</div> : null}
 
       <form className="composer" onSubmit={handleSubmit}>
         <textarea
@@ -86,4 +108,3 @@ export default function ChatPanel({
     </section>
   );
 }
-

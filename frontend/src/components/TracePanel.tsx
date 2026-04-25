@@ -3,13 +3,17 @@ import JsonBlock from "./JsonBlock";
 
 type TracePanelProps = {
   trace: TraceStep[];
+  title?: string;
 };
 
-export default function TracePanel({ trace }: TracePanelProps) {
+export default function TracePanel({ trace, title }: TracePanelProps) {
   return (
     <section className="panel trace-panel">
       <div className="panel-heading">
-        <h2>Execution Trace</h2>
+        <div>
+          <h2>Execution Trace</h2>
+          {title ? <p className="panel-subtitle">{title}</p> : null}
+        </div>
         <span>{trace.length} steps</span>
       </div>
 
@@ -81,4 +85,3 @@ function tryParseJson(value: string) {
     return value;
   }
 }
-

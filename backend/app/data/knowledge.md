@@ -30,9 +30,9 @@ The default adapter is `MockLLMAdapter`, which runs locally without an API key.
 `OpenAICompatibleAdapter` is included for real model calls through
 OpenAI-compatible chat completions.
 
-## Game Agent Extension
+## Internet Tool Extension
 
-The `map_lookup` tool is a small game-AI extension point. Future tools can add
-inventory queries, enemy position queries, move actions, attack actions, and
-pickup actions without changing the runtime loop.
-
+The `web_search` tool shows how the runtime can call a real internet lookup
+service. It uses a provider service behind the registry, so the implementation
+can later switch to Brave Search, SerpAPI, browser automation, or a custom
+enterprise search backend without changing the runtime loop.

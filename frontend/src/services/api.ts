@@ -1,4 +1,10 @@
-import type { ChatRequest, ChatResponse, ToolSpec } from "../types/api";
+import type {
+  ChatRequest,
+  ChatResponse,
+  ConversationDetail,
+  ConversationSummary,
+  ToolSpec
+} from "../types/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -30,3 +36,17 @@ export function getTools(): Promise<ToolSpec[]> {
   return request<ToolSpec[]>("/api/tools");
 }
 
+export function getConversations(userId: string): Promise<ConversationSummary[]> {
+  return request<ConversationSummary[]>(
+    `/api/conversations?user_id=${encodeURIComponent(userId)}`
+  );
+}
+
+export function getConversationDetail(
+  userId: string,
+  sessionId: string
+): Promise<ConversationDetail> {
+  return request<ConversationDetail>(
+    `/api/conversations/${encodeURIComponent(sessionId)}?user_id=${encodeURIComponent(userId)}`
+  );
+}

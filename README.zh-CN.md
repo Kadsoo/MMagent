@@ -14,7 +14,7 @@ MMagent/
       data/         # 本地知识库和待办数据
       llm/          # BaseLLMAdapter、MockLLMAdapter、OpenAI 兼容适配器
       schemas/      # Pydantic JSON tool calling 协议
-      services/     # todo 持久化服务
+      services/     # 真实工具服务：天气、网络查询、文档、todo
       tools/        # 工具注册中心和内置工具
       utils/        # 安全计算器求值器
     requirements.txt
@@ -36,7 +36,8 @@ MMagent/
 - Tool Registry：工具按名称、描述、输入 schema 和执行函数注册。
 - LLM Adapter Layer：本地 `MockLLMAdapter` 无需 API key 即可运行；`OpenAICompatibleAdapter` 可接入真实 chat-completion 模型。
 - 可观测性：每次模型输出、解析后的 JSON 调用、工具结果和最终回答都会作为 trace 数据返回，并在 React 前端中展示。
-- 可扩展性：内置 `map_lookup` 工具，用于展示该架构如何扩展到游戏 Agent 场景。
+- 真实工具服务：天气、网络查询、时间、文档、todo 和计算器都通过 registry 调用真实 service。
+- 可扩展性：service 层保持工具可替换，后续可加入游戏工具、浏览器工具或工作流自动化工具，而无需修改 runtime。
 
 ## JSON Tool Calling 协议
 
@@ -79,15 +80,15 @@ MMagent/
 
 ## 内置工具
 
-- `get_weather`：按城市返回 mock 天气。
+- `get_weather`：通过 Open-Meteo 或 OpenWeather 按城市获取真实当前天气。
 - `get_time`：按城市或 IANA timezone 返回本地时间。
 - `calculator`：安全计算 `+`、`-`、`*`、`/` 和括号表达式。
 - `search_docs`：对 `backend/app/data/knowledge.md` 进行关键词搜索。
-- `todo_add`：添加待办事项。
-- `todo_list`：列出待办事项。
-- `todo_delete`：按 1-based index 删除待办事项。
+- `web_search`：通过 DuckDuckGo Instant Answer 加 HTML fallback 进行网络查询。
+- `todo_add`：为当前用户添加待办事项，配置 MySQL 后写入数据库。
+- `todo_list`：列出当前用户的待办事项。
+- `todo_delete`：按 1-based index 删除当前用户的待办事项。
 - `get_system_status`：查看运行时状态。
-- `map_lookup`：游戏 AI 风格的地图 observation 演示工具。
 
 ## 本地运行
 
@@ -123,6 +124,8 @@ npm run dev
 
 将项目根目录下的 `.env.example` 复制为 `.env`。默认使用 mock 模式，不需要任何 API key。
 
+前端 Vite 环境变量不在项目根目录，而是在 `frontend/.env`。如果你要覆盖 API 地址，请将 `frontend/.env.example` 复制为 `frontend/.env` 后再修改。
+
 如需使用真实模型：
 
 ```env
@@ -130,6 +133,40 @@ LLM_PROVIDER=openai
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your_api_key
 OPENAI_MODEL=gpt-4o-mini
+```
+
+如需启用基于 MySQL 的会话持久化：
+
+```env
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your_password
+MYSQL_DATABASE=mmagent
+MYSQL_CHARSET=utf8mb4
+```
+
+天气默认使用 Open-Meteo，本地演示不需要 key：
+
+```env
+WEATHER_PROVIDER=open_meteo
+WEATHER_API_BASE_URL=https://api.open-meteo.com
+WEATHER_GEOCODING_BASE_URL=https://geocoding-api.open-meteo.com
+WEATHER_LANGUAGE=en
+```
+
+也支持 OpenWeather：
+
+```env
+WEATHER_PROVIDER=openweather
+WEATHER_API_KEY=your_weather_key
+WEATHER_API_BASE_URL=https://api.openweathermap.org/data/2.5/weather
+```
+
+网络查询默认使用 DuckDuckGo：
+
+```env
+WEB_SEARCH_BASE_URL=https://api.duckduckgo.com
 ```
 
 ## API 示例
@@ -145,7 +182,7 @@ curl http://127.0.0.1:8000/api/health
 ```bash
 curl -X POST http://127.0.0.1:8000/api/chat \
   -H "Content-Type: application/json" \
-  -d "{\"message\":\"What's the weather and current time in Nanjing?\"}"
+  -d "{\"user_id\":\"demo-user\",\"message\":\"What's the weather and current time in Nanjing?\"}"
 ```
 
 响应结构：
@@ -197,5 +234,5 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 - 使用 SQLite 或 Postgres 持久化会话。
 - 增加认证，以及按用户隔离的 todo/document 数据。
 - 增加多模态文件上传和图像理解工具。
-- 扩展游戏 Agent 工具：背包查询、敌人位置查询、移动、攻击、拾取和规划策略。
+- 可选扩展游戏 Agent 工具：背包查询、敌人位置查询、移动、攻击、拾取和规划策略。
 - 为工具参数校验、runtime 循环和 adapter 解析增加测试套件。

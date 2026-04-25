@@ -1,4 +1,5 @@
 .env
+.env.example.local
 .venv/
 venv/
 __pycache__/
@@ -10,7 +11,7 @@ __pycache__/
 node_modules/
 dist/
 .vite/
+frontend/.env
 
 backend/app/data/todos.json.tmp
 *.log
-

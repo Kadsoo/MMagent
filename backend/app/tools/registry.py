@@ -7,9 +7,10 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from app.schemas.tool import ToolSpec
+from app.tools.context import ToolContext
 
 
-ToolHandler = Callable[[BaseModel], Any | Awaitable[Any]]
+ToolHandler = Callable[..., Any | Awaitable[Any]]
 
 
 class RegisteredTool:
@@ -32,13 +33,21 @@ class RegisteredTool:
             input_schema=self.args_model.model_json_schema(),
         )
 
-    async def execute(self, arguments: dict[str, Any]) -> Any:
+    async def execute(
+        self,
+        arguments: dict[str, Any],
+        context: ToolContext | None = None,
+    ) -> Any:
         try:
             parsed_args = self.args_model.model_validate(arguments)
         except ValidationError as exc:
             raise ValueError(f"Invalid arguments for tool '{self.name}': {exc}") from exc
 
-        result = self.handler(parsed_args)
+        signature = inspect.signature(self.handler)
+        if "context" in signature.parameters or len(signature.parameters) >= 2:
+            result = self.handler(parsed_args, context)
+        else:
+            result = self.handler(parsed_args)
         if inspect.isawaitable(result):
             return await result
         return result
@@ -68,6 +77,10 @@ class ToolRegistry:
     def list_tools(self) -> list[ToolSpec]:
         return [tool.spec() for tool in self._tools.values()]
 
-    async def execute(self, name: str, arguments: dict[str, Any]) -> Any:
-        return await self.get(name).execute(arguments)
-
+    async def execute(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        context: ToolContext | None = None,
+    ) -> Any:
+        return await self.get(name).execute(arguments, context=context)

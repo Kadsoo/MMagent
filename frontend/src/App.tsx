@@ -1,48 +1,173 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
 import ChatPanel from "./components/ChatPanel";
 import ToolsPanel from "./components/ToolsPanel";
 import TracePanel from "./components/TracePanel";
-import { chat } from "./services/api";
-import type { ChatTurn, TraceStep } from "./types/api";
 import { useTools } from "./hooks/useTools";
+import {
+  chat,
+  getConversationDetail,
+  getConversations
+} from "./services/api";
+import type {
+  ConversationDetail,
+  ConversationSummary
+} from "./types/api";
 
 const starterPrompts = [
   "What's the weather and current time in Nanjing?",
   "Calculate (18 + 24) / 3 and explain the result.",
   "Search docs for JSON tool calling runtime.",
+  "Web search: FastAPI background tasks",
   "Add todo: prepare MMagent demo for interview",
-  "List todos",
-  "Look up the forest map."
+  "List todos"
 ];
 
+const USER_ID_STORAGE_KEY = "mmagent-user-id";
+type ConversationMode = "new" | "existing";
+
 export default function App() {
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
-  const [trace, setTrace] = useState<TraceStep[]>([]);
+  const [userId, setUserId] = useState(loadOrCreateUserId);
+  const [draftUserId, setDraftUserId] = useState(userId);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [conversationMode, setConversationMode] = useState<ConversationMode>("new");
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeConversation, setActiveConversation] = useState<ConversationDetail | null>(null);
+  const [selectedRunIndex, setSelectedRunIndex] = useState<number>(-1);
   const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { tools, loading: toolsLoading, error: toolsError } = useTools();
+  const conversationRequestRef = useRef(0);
+  const userIdRef = useRef(userId);
+  const displayConversation = conversationMode === "existing" ? activeConversation : null;
+  const conversationStatus = useMemo(() => {
+    if (historyLoading) {
+      return {
+        label: "Status",
+        value: "Loading conversation history..."
+      };
+    }
+    if (displayConversation) {
+      return {
+        label: "Active",
+        value: displayConversation.title
+      };
+    }
+    return {
+      label: "Status",
+      value: "Pick a saved conversation or start a fresh one."
+    };
+  }, [displayConversation, historyLoading]);
 
-  const lastAnswer = useMemo(
-    () => turns.length > 0 ? turns[turns.length - 1].answer : "",
-    [turns]
-  );
+  const selectedRun = useMemo(() => {
+    if (!displayConversation || displayConversation.runs.length === 0) {
+      return null;
+    }
+    if (selectedRunIndex >= 0 && selectedRunIndex < displayConversation.runs.length) {
+      return displayConversation.runs[selectedRunIndex];
+    }
+    return displayConversation.runs[displayConversation.runs.length - 1];
+  }, [displayConversation, selectedRunIndex]);
+
+  useEffect(() => {
+    userIdRef.current = userId;
+  }, [userId]);
+
+  useEffect(() => {
+    window.localStorage.setItem(USER_ID_STORAGE_KEY, userId);
+    void refreshConversations(userId, null);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!displayConversation || displayConversation.runs.length === 0) {
+      setSelectedRunIndex(-1);
+      return;
+    }
+    setSelectedRunIndex(displayConversation.runs.length - 1);
+  }, [displayConversation?.session_id, displayConversation?.runs.length]);
+
+  async function refreshConversations(
+    targetUserId: string,
+    preferredSessionId: string | null
+  ) {
+    const requestId = ++conversationRequestRef.current;
+    setHistoryLoading(true);
+    try {
+      const list = await getConversations(targetUserId);
+      if (requestId !== conversationRequestRef.current || targetUserId !== userIdRef.current) {
+        return;
+      }
+      setConversations(list);
+
+      if (!preferredSessionId) {
+        setConversationMode("new");
+        setActiveSessionId(null);
+        setActiveConversation(null);
+        return;
+      }
+
+      const detail = await getConversationDetail(targetUserId, preferredSessionId);
+      if (requestId !== conversationRequestRef.current || targetUserId !== userIdRef.current) {
+        return;
+      }
+      setConversationMode("existing");
+      setActiveSessionId(detail.session_id);
+      setActiveConversation(detail);
+    } catch (err) {
+      if (requestId !== conversationRequestRef.current) {
+        return;
+      }
+      setConversationMode("new");
+      setError(err instanceof Error ? err.message : "Failed to load conversations");
+      setActiveSessionId(null);
+      setActiveConversation(null);
+    } finally {
+      if (requestId === conversationRequestRef.current) {
+        setHistoryLoading(false);
+      }
+    }
+  }
+
+  async function openConversation(sessionId: string, targetUserId = userId) {
+    const requestId = ++conversationRequestRef.current;
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      const detail = await getConversationDetail(targetUserId, sessionId);
+      if (requestId !== conversationRequestRef.current || targetUserId !== userIdRef.current) {
+        return;
+      }
+      setConversationMode("existing");
+      setActiveSessionId(detail.session_id);
+      setActiveConversation(detail);
+    } catch (err) {
+      if (requestId !== conversationRequestRef.current) {
+        return;
+      }
+      setConversationMode("new");
+      setActiveSessionId(null);
+      setActiveConversation(null);
+      setError(err instanceof Error ? err.message : "Failed to load conversation");
+    } finally {
+      if (requestId === conversationRequestRef.current) {
+        setHistoryLoading(false);
+      }
+    }
+  }
 
   async function handleSend(message: string) {
     setLoading(true);
     setError(null);
     try {
-      const response = await chat({ message, session_id: sessionId });
-      setSessionId(response.session_id);
-      setTurns((current) => [
-        ...current,
-        {
-          id: `${Date.now()}`,
-          user: message,
-          answer: response.final_answer
-        }
-      ]);
-      setTrace(response.trace);
+      const response = await chat({
+        message,
+        user_id: userId,
+        session_id: conversationMode === "existing" ? activeSessionId : null
+      });
+      setConversationMode("existing");
+      setActiveSessionId(response.session_id);
+      await refreshConversations(userId, response.session_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {
@@ -50,36 +175,201 @@ export default function App() {
     }
   }
 
+  function handleCreateConversation() {
+    conversationRequestRef.current += 1;
+    setConversationMode("new");
+    setActiveSessionId(null);
+    setActiveConversation(null);
+    setSelectedRunIndex(-1);
+    setHistoryLoading(false);
+    setError(null);
+    if (window.location.hash !== "#/") {
+      window.location.hash = "#/";
+    }
+  }
+
+  function handleApplyUserId() {
+    const clean = draftUserId.trim();
+    if (!clean || clean === userId) {
+      return;
+    }
+    conversationRequestRef.current += 1;
+    setConversationMode("new");
+    setActiveSessionId(null);
+    setActiveConversation(null);
+    setSelectedRunIndex(-1);
+    setConversations([]);
+    setHistoryLoading(true);
+    setError(null);
+    setUserId(clean);
+  }
+
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">JSON Tool Calling Agent Runtime</p>
-          <h1>MMagent</h1>
-        </div>
-        <div className="status-strip">
-          <span>{tools.length} tools</span>
-          <span>{trace.length} trace steps</span>
-          <span>{sessionId ? "session active" : "new session"}</span>
-        </div>
-      </header>
+    <HashRouter>
+      <main className="app-shell">
+        <header className="app-header">
+          <div className="brand-block">
+            <p className="eyebrow">Multi-step JSON Tool Calling Agent</p>
+            <h1>MMagent</h1>
+            <p className="brand-copy">
+              Persisted user conversations, isolated trace tooling, and a cleaner
+              app-style chat workflow.
+            </p>
+          </div>
 
-      <section className="workspace">
-        <ChatPanel
-          turns={turns}
-          loading={loading}
-          error={error}
-          starterPrompts={starterPrompts}
-          onSend={handleSend}
-          lastAnswer={lastAnswer}
-        />
+          <nav className="nav-strip" aria-label="Primary">
+            <NavLink to="/" end className={navClassName}>
+              Home
+            </NavLink>
+            <NavLink to="/trace" className={navClassName}>
+              Trace
+            </NavLink>
+            <NavLink to="/tools" className={navClassName}>
+              Tools
+            </NavLink>
+          </nav>
 
-        <aside className="inspector">
-          <TracePanel trace={trace} />
-          <ToolsPanel tools={tools} loading={toolsLoading} error={toolsError} />
-        </aside>
-      </section>
-    </main>
+          <section className="control-grid">
+            <div className="control-card">
+              <div className="control-header">
+                <span>User ID</span>
+                <strong>{userId}</strong>
+              </div>
+              <div className="inline-form">
+                <input
+                  value={draftUserId}
+                  onChange={(event) => setDraftUserId(event.target.value)}
+                  placeholder="Enter a user id"
+                />
+                <button type="button" className="secondary-button" onClick={handleApplyUserId}>
+                  Apply
+                </button>
+              </div>
+            </div>
+
+            <div className="control-card">
+              <div className="control-header">
+                <span>Conversation</span>
+                <strong>{conversations.length}</strong>
+              </div>
+              <div className="inline-form">
+                <select
+                  value={activeSessionId ?? ""}
+                  onChange={(event) => {
+                    const nextSessionId = event.target.value;
+                    if (!nextSessionId) {
+                      handleCreateConversation();
+                      return;
+                    }
+                    void openConversation(nextSessionId);
+                  }}
+                >
+                  <option value="">Start a new conversation</option>
+                  {conversations.map((conversation) => (
+                    <option key={conversation.session_id} value={conversation.session_id}>
+                      {conversation.title}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className="primary-button" onClick={handleCreateConversation}>
+                  New
+                </button>
+              </div>
+              <p className="control-note" aria-live="polite">
+                <span className="control-note-label">{conversationStatus.label}</span>
+                <span className="control-note-value">{conversationStatus.value}</span>
+              </p>
+            </div>
+          </section>
+        </header>
+
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <section className="page-container">
+                <ChatPanel
+                  key={conversationMode === "new" ? "new-conversation" : activeSessionId ?? "active"}
+                  runs={displayConversation?.runs ?? []}
+                  loading={loading}
+                  historyLoading={historyLoading}
+                  error={error}
+                  starterPrompts={starterPrompts}
+                  onSend={handleSend}
+                  sessionTitle={displayConversation?.title ?? "New Conversation"}
+                  userId={userId}
+                />
+              </section>
+            }
+          />
+          <Route
+            path="/trace"
+            element={
+              <section className="page-container trace-layout">
+                <section className="panel run-list-panel">
+                  <div className="panel-heading">
+                    <h2>Stored Runs</h2>
+                    <span>{displayConversation?.runs.length ?? 0} runs</span>
+                  </div>
+                  {!displayConversation || displayConversation.runs.length === 0 ? (
+                    <p className="muted">
+                      Select a conversation with at least one completed request to inspect its trace.
+                    </p>
+                  ) : (
+                    <div className="run-list">
+                      {displayConversation.runs.map((run, index) => (
+                        <button
+                          key={`${run.id ?? index}-${run.created_at}`}
+                          type="button"
+                          className={
+                            index === selectedRunIndex
+                              ? "run-list-item run-list-item-active"
+                              : "run-list-item"
+                          }
+                          onClick={() => setSelectedRunIndex(index)}
+                        >
+                          <strong>{run.user_input}</strong>
+                          <span>{formatDate(run.created_at)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </section>
+                <TracePanel
+                  trace={selectedRun?.trace ?? []}
+                  title={selectedRun ? selectedRun.user_input : "Execution Trace"}
+                />
+              </section>
+            }
+          />
+          <Route
+            path="/tools"
+            element={
+              <section className="page-container">
+                <ToolsPanel tools={tools} loading={toolsLoading} error={toolsError} />
+              </section>
+            }
+          />
+        </Routes>
+      </main>
+    </HashRouter>
   );
 }
 
+function navClassName({ isActive }: { isActive: boolean }) {
+  return isActive ? "nav-link nav-link-active" : "nav-link";
+}
+
+function loadOrCreateUserId() {
+  const stored = window.localStorage.getItem(USER_ID_STORAGE_KEY);
+  if (stored) {
+    return stored;
+  }
+  const generated = `user-${Math.random().toString(36).slice(2, 8)}`;
+  window.localStorage.setItem(USER_ID_STORAGE_KEY, generated);
+  return generated;
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleString();
+}

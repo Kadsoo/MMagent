@@ -11,6 +11,7 @@ from app.agent.prompts import build_system_prompt
 from app.llm.base import BaseLLMAdapter
 from app.schemas.chat import ChatResponse
 from app.schemas.protocol import AgentMessage, FinalAnswer, ToolCall, ToolResult, TraceStep
+from app.tools.context import ToolContext
 from app.tools.registry import ToolRegistry
 
 
@@ -30,8 +31,13 @@ class AgentRuntime:
         self.sessions = sessions
         self.max_steps = max_steps
 
-    async def run(self, user_input: str, session_id: str | None = None) -> ChatResponse:
-        memory = self.sessions.get_or_create(session_id)
+    async def run(
+        self,
+        user_input: str,
+        user_id: str,
+        session_id: str | None = None,
+    ) -> ChatResponse:
+        memory = self.sessions.get_or_create(user_id=user_id, session_id=session_id)
         self._ensure_system_message(memory.messages)
         memory.add_message("user", user_input)
 
@@ -64,7 +70,7 @@ class AgentRuntime:
 
             if isinstance(decision, ToolCall):
                 trace_step.tool_call = decision
-                tool_result = await self._execute_tool(decision)
+                tool_result = await self._execute_tool(decision, memory)
                 trace_step.tool_result = tool_result
                 memory.add_message(
                     "tool",
@@ -101,12 +107,19 @@ class AgentRuntime:
             )
             final_answer = final.answer
 
-        memory.extend_trace(run_trace)
+        self.sessions.record_run(
+            memory=memory,
+            user_input=user_input,
+            final_answer=final_answer,
+            trace=run_trace,
+        )
         return ChatResponse(
             session_id=memory.session_id,
+            user_id=memory.user_id,
             final_answer=final_answer,
             trace=run_trace,
             messages=memory.messages,
+            runs=memory.runs,
         )
 
     def _ensure_system_message(self, messages: list[AgentMessage]) -> None:
@@ -115,9 +128,16 @@ class AgentRuntime:
         system_prompt = build_system_prompt(self.registry.list_tools())
         messages.insert(0, AgentMessage(role="system", content=system_prompt))
 
-    async def _execute_tool(self, tool_call: ToolCall) -> ToolResult:
+    async def _execute_tool(self, tool_call: ToolCall, memory: Any) -> ToolResult:
         try:
-            result = await self.registry.execute(tool_call.tool_name, tool_call.arguments)
+            result = await self.registry.execute(
+                tool_call.tool_name,
+                tool_call.arguments,
+                context=ToolContext(
+                    user_id=memory.user_id,
+                    session_id=memory.session_id,
+                ),
+            )
             return ToolResult(
                 tool_name=tool_call.tool_name,
                 status="success",
@@ -144,4 +164,3 @@ class AgentRuntime:
         if output_type == "final_answer":
             return FinalAnswer.model_validate(payload)
         raise ValueError(f"Unknown agent output type: {output_type}")
-

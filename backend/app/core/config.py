@@ -24,6 +24,18 @@ class Settings(BaseModel):
     openai_base_url: str = Field(default="https://api.openai.com/v1")
     openai_api_key: str | None = None
     openai_model: str = Field(default="gpt-4o-mini")
+    mysql_host: str = Field(default="127.0.0.1")
+    mysql_port: int = Field(default=3306)
+    mysql_user: str = Field(default="root")
+    mysql_password: str = Field(default="")
+    mysql_database: str = Field(default="mmagent")
+    mysql_charset: str = Field(default="utf8mb4")
+    weather_provider: str = Field(default="open_meteo")
+    weather_api_key: str | None = None
+    weather_api_base_url: str = Field(default="https://api.open-meteo.com")
+    weather_geocoding_base_url: str = Field(default="https://geocoding-api.open-meteo.com")
+    weather_language: str = Field(default="en")
+    web_search_base_url: str = Field(default="https://api.duckduckgo.com")
 
 
 def _split_csv(value: str | None, default: list[str]) -> list[str]:
@@ -36,6 +48,10 @@ def _split_csv(value: str | None, default: list[str]) -> list[str]:
 def get_settings() -> Settings:
     load_dotenv(ROOT_DIR / ".env")
     default_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    weather_base_url = os.getenv("WEATHER_API_BASE_URL") or "https://api.open-meteo.com"
+    weather_provider = os.getenv("WEATHER_PROVIDER")
+    if not weather_provider:
+        weather_provider = "openweather" if "openweathermap.org" in weather_base_url else "open_meteo"
     return Settings(
         app_env=os.getenv("APP_ENV", "local"),
         backend_cors_origins=_split_csv(
@@ -46,5 +62,17 @@ def get_settings() -> Settings:
         openai_base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
         openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        mysql_host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        mysql_port=int(os.getenv("MYSQL_PORT", "3306")),
+        mysql_user=os.getenv("MYSQL_USER", "root"),
+        mysql_password=os.getenv("MYSQL_PASSWORD", ""),
+        mysql_database=os.getenv("MYSQL_DATABASE", "mmagent"),
+        mysql_charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
+        weather_provider=weather_provider.lower(),
+        weather_api_key=os.getenv("WEATHER_API_KEY") or None,
+        weather_api_base_url=weather_base_url,
+        weather_geocoding_base_url=os.getenv("WEATHER_GEOCODING_BASE_URL")
+        or "https://geocoding-api.open-meteo.com",
+        weather_language=os.getenv("WEATHER_LANGUAGE", "en"),
+        web_search_base_url=os.getenv("WEB_SEARCH_BASE_URL", "https://api.duckduckgo.com"),
     )
-

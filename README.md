@@ -16,7 +16,7 @@ MMagent/
       data/         # local knowledge base and todo store
       llm/          # BaseLLMAdapter, MockLLMAdapter, OpenAI-compatible adapter
       schemas/      # Pydantic JSON tool calling protocol
-      services/     # todo persistence service
+      services/     # real tool services: weather, web search, docs, todos
       tools/        # tool registry and built-in tools
       utils/        # safe calculator evaluator
     requirements.txt
@@ -43,8 +43,10 @@ MMagent/
   `OpenAICompatibleAdapter` is ready for real chat-completion models.
 - Observability: every model output, parsed JSON call, tool result, and final
   answer is returned as trace data and visualized in React.
-- Extensibility: includes a `map_lookup` tool to show how this architecture can
-  evolve into a game Agent.
+- Real Tool Services: weather, web search, time, docs, todos, and calculator
+  tools are implemented behind the registry.
+- Extensibility: the service layer keeps tools replaceable, so game tools,
+  browser tools, or workflow automations can be added without changing runtime.
 
 ## JSON Tool Calling Protocol
 
@@ -87,15 +89,15 @@ Final answer:
 
 ## Built-in Tools
 
-- `get_weather`: mock weather by city.
+- `get_weather`: real current weather by city through Open-Meteo or OpenWeather.
 - `get_time`: local time by city or IANA timezone.
 - `calculator`: safe arithmetic for `+`, `-`, `*`, `/`, and parentheses.
 - `search_docs`: keyword search over `backend/app/data/knowledge.md`.
-- `todo_add`: add a todo item.
-- `todo_list`: list todo items.
-- `todo_delete`: delete a todo item by 1-based index.
+- `web_search`: internet lookup through DuckDuckGo Instant Answer plus HTML fallback.
+- `todo_add`: add a per-user todo item, using MySQL when configured.
+- `todo_list`: list per-user todo items.
+- `todo_delete`: delete a per-user todo item by 1-based index.
 - `get_system_status`: inspect runtime status.
-- `map_lookup`: game-AI style map observation demo.
 
 ## Run Locally
 
@@ -134,6 +136,10 @@ Open the frontend at `http://127.0.0.1:5173`.
 Copy `.env.example` to `.env` in the project root. The default mode is mock and
 does not require any API key.
 
+Frontend Vite env lives in `frontend/.env`, not the project root. Copy
+`frontend/.env.example` to `frontend/.env` when you need to override the API
+base URL.
+
 To use a real model:
 
 ```env
@@ -141,6 +147,40 @@ LLM_PROVIDER=openai
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your_api_key
 OPENAI_MODEL=gpt-4o-mini
+```
+
+To enable MySQL-backed conversation history:
+
+```env
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your_password
+MYSQL_DATABASE=mmagent
+MYSQL_CHARSET=utf8mb4
+```
+
+Weather defaults to Open-Meteo, which does not require a key for local demos:
+
+```env
+WEATHER_PROVIDER=open_meteo
+WEATHER_API_BASE_URL=https://api.open-meteo.com
+WEATHER_GEOCODING_BASE_URL=https://geocoding-api.open-meteo.com
+WEATHER_LANGUAGE=en
+```
+
+OpenWeather is also supported:
+
+```env
+WEATHER_PROVIDER=openweather
+WEATHER_API_KEY=your_weather_key
+WEATHER_API_BASE_URL=https://api.openweathermap.org/data/2.5/weather
+```
+
+Web search defaults to DuckDuckGo:
+
+```env
+WEB_SEARCH_BASE_URL=https://api.duckduckgo.com
 ```
 
 ## API Examples
@@ -156,7 +196,7 @@ Chat:
 ```bash
 curl -X POST http://127.0.0.1:8000/api/chat \
   -H "Content-Type: application/json" \
-  -d "{\"message\":\"What's the weather and current time in Nanjing?\"}"
+  -d "{\"user_id\":\"demo-user\",\"message\":\"What's the weather and current time in Nanjing?\"}"
 ```
 
 Response shape:
@@ -213,6 +253,6 @@ Add screenshots after running the app:
 - Persist sessions in SQLite or Postgres.
 - Add authentication and per-user todo/document stores.
 - Add multimodal file upload and image understanding tools.
-- Expand game Agent tools: inventory query, enemy position query, move, attack,
-  pickup, and planner policies.
+- Add optional game Agent tools: inventory query, enemy position query, move,
+  attack, pickup, and planner policies.
 - Add test suites for tool validation, runtime loops, and adapter parsing.

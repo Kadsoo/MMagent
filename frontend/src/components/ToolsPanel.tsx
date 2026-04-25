@@ -11,7 +11,12 @@ export default function ToolsPanel({ tools, loading, error }: ToolsPanelProps) {
   return (
     <section className="panel tools-panel">
       <div className="panel-heading">
-        <h2>Registered Tools</h2>
+        <div>
+          <h2>Registered Tools</h2>
+          <p className="panel-subtitle">
+            Tool registration is now separated from the chat homepage for a cleaner app layout.
+          </p>
+        </div>
         <span>{loading ? "loading" : `${tools.length} tools`}</span>
       </div>
 
@@ -34,4 +39,3 @@ export default function ToolsPanel({ tools, loading, error }: ToolsPanelProps) {
     </section>
   );
 }
-

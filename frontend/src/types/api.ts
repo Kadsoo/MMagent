@@ -40,21 +40,39 @@ export type ToolSpec = {
   input_schema: Record<string, unknown>;
 };
 
+export type ConversationRun = {
+  id?: number | null;
+  user_input: string;
+  final_answer: string;
+  trace: TraceStep[];
+  created_at: string;
+};
+
+export type ConversationSummary = {
+  session_id: string;
+  user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  last_message_preview?: string | null;
+};
+
+export type ConversationDetail = ConversationSummary & {
+  messages: AgentMessage[];
+  runs: ConversationRun[];
+};
+
 export type ChatRequest = {
   message: string;
+  user_id: string;
   session_id?: string | null;
 };
 
 export type ChatResponse = {
   session_id: string;
+  user_id: string;
   final_answer: string;
   trace: TraceStep[];
   messages: AgentMessage[];
+  runs: ConversationRun[];
 };
-
-export type ChatTurn = {
-  id: string;
-  user: string;
-  answer: string;
-};
-
