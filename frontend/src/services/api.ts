@@ -2,6 +2,7 @@ import type {
   ChatRequest,
   ChatResponse,
   ConversationDetail,
+  ConversationRenameRequest,
   ConversationSummary,
   ToolSpec
 } from "../types/api";
@@ -48,5 +49,18 @@ export function getConversationDetail(
 ): Promise<ConversationDetail> {
   return request<ConversationDetail>(
     `/api/conversations/${encodeURIComponent(sessionId)}?user_id=${encodeURIComponent(userId)}`
+  );
+}
+
+export function renameConversation(
+  sessionId: string,
+  payload: ConversationRenameRequest
+): Promise<ConversationDetail> {
+  return request<ConversationDetail>(
+    `/api/conversations/${encodeURIComponent(sessionId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }
   );
 }

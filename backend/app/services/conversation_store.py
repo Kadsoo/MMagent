@@ -43,6 +43,7 @@ class MySQLConversationStore:
         return ConversationMemory(
             session_id=detail.session_id,
             user_id=detail.user_id,
+            title=detail.title,
             messages=detail.messages,
             trace_history=trace_history,
             runs=detail.runs,
@@ -61,7 +62,7 @@ class MySQLConversationStore:
                 user_id=memory.user_id,
                 session_id=memory.session_id,
             )
-            conversation.title = self._derive_title(memory.messages)
+            conversation.title = memory.title or self._derive_title(memory.messages)
             conversation.last_message_preview = (final_answer or user_input)[:255]
             conversation.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             conversation.messages = [
@@ -113,6 +114,31 @@ class MySQLConversationStore:
             )
             if not row:
                 return None
+            return self._to_detail(row)
+
+    def rename_conversation(
+        self,
+        user_id: str,
+        session_id: str,
+        title: str,
+    ) -> ConversationDetail | None:
+        with self._session_scope() as db:
+            row = db.scalar(
+                select(ConversationModel)
+                .where(
+                    ConversationModel.user_id == user_id,
+                    ConversationModel.session_id == session_id,
+                )
+                .options(
+                    selectinload(ConversationModel.messages),
+                    selectinload(ConversationModel.runs),
+                )
+            )
+            if not row:
+                return None
+            row.title = title[:80]
+            row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.flush()
             return self._to_detail(row)
 
     def _get_or_create_conversation(

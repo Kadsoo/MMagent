@@ -12,6 +12,7 @@ from app.schemas.protocol import AgentMessage, TraceStep
 class ConversationMemory:
     session_id: str
     user_id: str
+    title: str | None = None
     messages: list[AgentMessage] = field(default_factory=list)
     trace_history: list[TraceStep] = field(default_factory=list)
     runs: list[ConversationRun] = field(default_factory=list)
@@ -113,13 +114,44 @@ class SessionStore:
         return ConversationDetail(
             session_id=memory.session_id,
             user_id=memory.user_id,
-            title=self._derive_title(memory.messages),
+            title=memory.title or self._derive_title(memory.messages),
             created_at=memory.runs[0].created_at if memory.runs else now,
             updated_at=memory.runs[-1].created_at if memory.runs else now,
             last_message_preview=memory.runs[-1].final_answer[:255] if memory.runs else None,
             messages=memory.messages,
             runs=memory.runs,
         )
+
+    def rename_conversation(
+        self,
+        user_id: str,
+        session_id: str,
+        title: str,
+    ) -> ConversationDetail | None:
+        clean_title = " ".join(title.split())
+        if not clean_title:
+            raise ValueError("Conversation title cannot be empty.")
+
+        if self._conversation_store:
+            detail = self._conversation_store.rename_conversation(
+                user_id=user_id,
+                session_id=session_id,
+                title=clean_title,
+            )
+            if detail:
+                loaded = self._conversation_store.load_memory(
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+                if loaded:
+                    self._sessions[loaded.session_id] = loaded
+                return detail
+
+        memory = self._sessions.get(session_id)
+        if not memory or memory.user_id != user_id:
+            return None
+        memory.title = clean_title
+        return self.get_conversation_detail(user_id=user_id, session_id=session_id)
 
     @staticmethod
     def _derive_title(messages: list[AgentMessage]) -> str:

@@ -27,3 +27,8 @@ class ConversationSummary(BaseModel):
 class ConversationDetail(ConversationSummary):
     messages: list[AgentMessage] = Field(default_factory=list)
     runs: list[ConversationRun] = Field(default_factory=list)
+
+
+class ConversationRenameRequest(BaseModel):
+    user_id: str = Field(min_length=2, max_length=64)
+    title: str = Field(min_length=1, max_length=80)

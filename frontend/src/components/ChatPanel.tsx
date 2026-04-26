@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { ConversationRun } from "../types/api";
 
 type ChatPanelProps = {
@@ -26,15 +26,36 @@ export default function ChatPanel({
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const hasVisibleTurns = runs.length > 0 || Boolean(pendingUserMessage);
+  const conversationRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = conversationRef.current;
+    if (!node) {
+      return;
+    }
+    node.scrollTop = node.scrollHeight;
+  }, [runs.length, pendingUserMessage]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    await sendCurrentMessage();
+  }
+
+  async function sendCurrentMessage() {
     const clean = message.trim();
     if (!clean || loading) {
       return;
     }
     setMessage("");
     await onSend(clean);
+  }
+
+  async function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey) {
+      return;
+    }
+    event.preventDefault();
+    await sendCurrentMessage();
   }
 
   return (
@@ -47,7 +68,7 @@ export default function ChatPanel({
         <div className="user-pill">{userId}</div>
       </div>
 
-      <div className="conversation">
+      <div className="conversation" ref={conversationRef}>
         {historyLoading && !hasVisibleTurns ? (
           <div className="loading-state">
             <h2>Loading conversation</h2>
@@ -117,6 +138,7 @@ export default function ChatPanel({
         <textarea
           value={message}
           onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={handleComposerKeyDown}
           placeholder="Ask MMagent to solve a task..."
           rows={3}
         />

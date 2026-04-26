@@ -7,7 +7,8 @@ import { useTools } from "./hooks/useTools";
 import {
   chat,
   getConversationDetail,
-  getConversations
+  getConversations,
+  renameConversation
 } from "./services/api";
 import type {
   ConversationDetail,
@@ -34,6 +35,7 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeConversation, setActiveConversation] = useState<ConversationDetail | null>(null);
   const [selectedRunIndex, setSelectedRunIndex] = useState<number>(-1);
+  const [conversationTitleDraft, setConversationTitleDraft] = useState("");
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
@@ -87,6 +89,10 @@ export default function App() {
     }
     setSelectedRunIndex(displayConversation.runs.length - 1);
   }, [displayConversation?.session_id, displayConversation?.runs.length]);
+
+  useEffect(() => {
+    setConversationTitleDraft(displayConversation?.title ?? "");
+  }, [displayConversation?.session_id, displayConversation?.title]);
 
   async function refreshConversations(
     targetUserId: string,
@@ -178,6 +184,27 @@ export default function App() {
     }
   }
 
+  async function handleRenameConversation() {
+    if (!activeSessionId || conversationMode !== "existing") {
+      return;
+    }
+    const cleanTitle = conversationTitleDraft.trim();
+    if (!cleanTitle || cleanTitle === displayConversation?.title) {
+      return;
+    }
+    setError(null);
+    try {
+      const detail = await renameConversation(activeSessionId, {
+        user_id: userId,
+        title: cleanTitle
+      });
+      setActiveConversation(detail);
+      await refreshConversations(userId, detail.session_id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to rename conversation");
+    }
+  }
+
   function handleCreateConversation() {
     conversationRequestRef.current += 1;
     setConversationMode("new");
@@ -210,14 +237,10 @@ export default function App() {
   return (
     <HashRouter>
       <main className="app-shell">
-        <header className="app-header">
+        <aside className="app-sidebar">
           <div className="brand-block">
-            <p className="eyebrow">Multi-step JSON Tool Calling Agent</p>
+            <p className="eyebrow">JSON Tool Calling</p>
             <h1>MMagent</h1>
-            <p className="brand-copy">
-              Persisted user conversations, isolated trace tooling, and a cleaner
-              app-style chat workflow.
-            </p>
           </div>
 
           <nav className="nav-strip" aria-label="Primary">
@@ -232,7 +255,7 @@ export default function App() {
             </NavLink>
           </nav>
 
-          <section className="control-grid">
+          <section className="control-stack">
             <div className="control-card">
               <div className="control-header">
                 <span>User ID</span>
@@ -245,9 +268,10 @@ export default function App() {
                   placeholder="Enter a user id"
                 />
                 <button type="button" className="secondary-button" onClick={handleApplyUserId}>
-                  Apply
+                  确定
                 </button>
               </div>
+              <p className="helper-note">请注册新id或使用已有id。</p>
             </div>
 
             <div className="control-card">
@@ -257,6 +281,7 @@ export default function App() {
               </div>
               <div className="inline-form">
                 <select
+                  className="conversation-select"
                   value={activeSessionId ?? ""}
                   onChange={(event) => {
                     const nextSessionId = event.target.value;
@@ -278,83 +303,102 @@ export default function App() {
                   New
                 </button>
               </div>
+              {displayConversation ? (
+                <div className="rename-form">
+                  <input
+                    value={conversationTitleDraft}
+                    onChange={(event) => setConversationTitleDraft(event.target.value)}
+                    placeholder="Conversation name"
+                    maxLength={80}
+                  />
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={handleRenameConversation}
+                  >
+                    Rename
+                  </button>
+                </div>
+              ) : null}
               <p className="control-note" aria-live="polite">
                 <span className="control-note-label">{conversationStatus.label}</span>
                 <span className="control-note-value">{conversationStatus.value}</span>
               </p>
             </div>
           </section>
-        </header>
+        </aside>
 
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <section className="page-container">
-                <ChatPanel
-                  key={conversationMode === "new" ? "new-conversation" : activeSessionId ?? "active"}
-                  runs={displayConversation?.runs ?? []}
-                  loading={loading}
-                  historyLoading={historyLoading}
-                  pendingUserMessage={pendingUserMessage}
-                  error={error}
-                  starterPrompts={starterPrompts}
-                  onSend={handleSend}
-                  sessionTitle={displayConversation?.title ?? "New Conversation"}
-                  userId={userId}
-                />
-              </section>
-            }
-          />
-          <Route
-            path="/trace"
-            element={
-              <section className="page-container trace-layout">
-                <section className="panel run-list-panel">
-                  <div className="panel-heading">
-                    <h2>Stored Runs</h2>
-                    <span>{displayConversation?.runs.length ?? 0} runs</span>
-                  </div>
-                  {!displayConversation || displayConversation.runs.length === 0 ? (
-                    <p className="muted">
-                      Select a conversation with at least one completed request to inspect its trace.
-                    </p>
-                  ) : (
-                    <div className="run-list">
-                      {displayConversation.runs.map((run, index) => (
-                        <button
-                          key={`${run.id ?? index}-${run.created_at}`}
-                          type="button"
-                          className={
-                            index === selectedRunIndex
-                              ? "run-list-item run-list-item-active"
-                              : "run-list-item"
-                          }
-                          onClick={() => setSelectedRunIndex(index)}
-                        >
-                          <strong>{run.user_input}</strong>
-                          <span>{formatDate(run.created_at)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+        <section className="app-content">
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <section className="page-container">
+                  <ChatPanel
+                    key={conversationMode === "new" ? "new-conversation" : activeSessionId ?? "active"}
+                    runs={displayConversation?.runs ?? []}
+                    loading={loading}
+                    historyLoading={historyLoading}
+                    pendingUserMessage={pendingUserMessage}
+                    error={error}
+                    starterPrompts={starterPrompts}
+                    onSend={handleSend}
+                    sessionTitle={displayConversation?.title ?? "New Conversation"}
+                    userId={userId}
+                  />
                 </section>
-                <TracePanel
-                  trace={selectedRun?.trace ?? []}
-                  title={selectedRun ? selectedRun.user_input : "Execution Trace"}
-                />
-              </section>
-            }
-          />
-          <Route
-            path="/tools"
-            element={
-              <section className="page-container">
-                <ToolsPanel tools={tools} loading={toolsLoading} error={toolsError} />
-              </section>
-            }
-          />
-        </Routes>
+              }
+            />
+            <Route
+              path="/trace"
+              element={
+                <section className="page-container trace-layout">
+                  <section className="panel run-list-panel">
+                    <div className="panel-heading">
+                      <h2>Stored Runs</h2>
+                      <span>{displayConversation?.runs.length ?? 0} runs</span>
+                    </div>
+                    {!displayConversation || displayConversation.runs.length === 0 ? (
+                      <p className="muted">
+                        Select a conversation with at least one completed request to inspect its trace.
+                      </p>
+                    ) : (
+                      <div className="run-list">
+                        {displayConversation.runs.map((run, index) => (
+                          <button
+                            key={`${run.id ?? index}-${run.created_at}`}
+                            type="button"
+                            className={
+                              index === selectedRunIndex
+                                ? "run-list-item run-list-item-active"
+                                : "run-list-item"
+                            }
+                            onClick={() => setSelectedRunIndex(index)}
+                          >
+                            <strong>{run.user_input}</strong>
+                            <span>{formatDate(run.created_at)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                  <TracePanel
+                    trace={selectedRun?.trace ?? []}
+                    title={selectedRun ? selectedRun.user_input : "Execution Trace"}
+                  />
+                </section>
+              }
+            />
+            <Route
+              path="/tools"
+              element={
+                <section className="page-container">
+                  <ToolsPanel tools={tools} loading={toolsLoading} error={toolsError} />
+                </section>
+              }
+            />
+          </Routes>
+        </section>
       </main>
     </HashRouter>
   );

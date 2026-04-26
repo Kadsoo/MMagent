@@ -76,3 +76,8 @@ export type ChatResponse = {
   messages: AgentMessage[];
   runs: ConversationRun[];
 };
+
+export type ConversationRenameRequest = {
+  user_id: string;
+  title: string;
+};

@@ -5,7 +5,11 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from app.agent.memory import SessionStore
 from app.agent.runtime import AgentRuntime
 from app.schemas.chat import ChatRequest, ChatResponse, HealthResponse
-from app.schemas.conversation import ConversationDetail, ConversationSummary
+from app.schemas.conversation import (
+    ConversationDetail,
+    ConversationRenameRequest,
+    ConversationSummary,
+)
 from app.schemas.tool import ToolSpec
 from app.services.todo_service import TodoService
 from app.services.todo_store import TodoStore
@@ -55,6 +59,23 @@ async def get_conversation_detail(
 ) -> ConversationDetail:
     sessions: SessionStore = request.app.state.sessions
     detail = sessions.get_conversation_detail(user_id=user_id, session_id=session_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return detail
+
+
+@router.patch("/conversations/{session_id}", response_model=ConversationDetail)
+async def rename_conversation(
+    session_id: str,
+    payload: ConversationRenameRequest,
+    request: Request,
+) -> ConversationDetail:
+    sessions: SessionStore = request.app.state.sessions
+    detail = sessions.rename_conversation(
+        user_id=payload.user_id,
+        session_id=session_id,
+        title=payload.title,
+    )
     if not detail:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return detail
