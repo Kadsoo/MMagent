@@ -5,6 +5,7 @@ type ChatPanelProps = {
   runs: ConversationRun[];
   loading: boolean;
   historyLoading: boolean;
+  pendingUserMessage: string | null;
   error: string | null;
   starterPrompts: string[];
   sessionTitle: string;
@@ -16,6 +17,7 @@ export default function ChatPanel({
   runs,
   loading,
   historyLoading,
+  pendingUserMessage,
   error,
   starterPrompts,
   sessionTitle,
@@ -23,6 +25,7 @@ export default function ChatPanel({
   onSend
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
+  const hasVisibleTurns = runs.length > 0 || Boolean(pendingUserMessage);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -45,12 +48,12 @@ export default function ChatPanel({
       </div>
 
       <div className="conversation">
-        {historyLoading ? (
+        {historyLoading && !hasVisibleTurns ? (
           <div className="loading-state">
             <h2>Loading conversation</h2>
             <p>Fetching this user&apos;s saved history and active session...</p>
           </div>
-        ) : runs.length === 0 ? (
+        ) : !hasVisibleTurns ? (
           <div className="empty-state">
             <h2>Run an agent task</h2>
             <p>
@@ -71,24 +74,40 @@ export default function ChatPanel({
             </div>
           </div>
         ) : (
-          runs.map((run, index) => (
-            <article
-              className="turn"
-              key={`${run.id ?? index}-${run.created_at}`}
-            >
-              <div className="bubble user-bubble">
-                <span>User</span>
-                <p>{run.user_input}</p>
-              </div>
-              <div className="bubble agent-bubble">
-                <span>Agent final answer</span>
-                <p>{run.final_answer}</p>
-              </div>
-              <div className="turn-meta">
-                Round {index + 1} · {new Date(run.created_at).toLocaleString()}
-              </div>
-            </article>
-          ))
+          <>
+            {runs.map((run, index) => (
+              <article
+                className="turn"
+                key={`${run.id ?? index}-${run.created_at}`}
+              >
+                <div className="bubble user-bubble">
+                  <span>User</span>
+                  <p>{run.user_input}</p>
+                </div>
+                <div className="bubble agent-bubble">
+                  <span>Agent final answer</span>
+                  <p>{run.final_answer}</p>
+                </div>
+                <div className="turn-meta">
+                  Round {index + 1} - {new Date(run.created_at).toLocaleString()}
+                </div>
+              </article>
+            ))}
+
+            {pendingUserMessage ? (
+              <article className="turn turn-pending">
+                <div className="bubble user-bubble">
+                  <span>User</span>
+                  <p>{pendingUserMessage}</p>
+                </div>
+                <div className="bubble agent-bubble agent-bubble-pending">
+                  <span>Agent</span>
+                  <p>Working on it...</p>
+                </div>
+                <div className="turn-meta">Sending request</div>
+              </article>
+            ) : null}
+          </>
         )}
       </div>
 

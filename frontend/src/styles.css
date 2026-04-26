@@ -355,6 +355,15 @@ h1 {
   border: 1px solid #d3e5ff;
 }
 
+.agent-bubble-pending {
+  color: #47688f;
+  border-style: dashed;
+}
+
+.turn-pending {
+  opacity: 0.92;
+}
+
 .turn-meta {
   color: #5f7a9d;
   font-size: 12px;

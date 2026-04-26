@@ -17,7 +17,7 @@ import type {
 const starterPrompts = [
   "What's the weather and current time in Nanjing?",
   "Calculate (18 + 24) / 3 and explain the result.",
-  "Search docs for JSON tool calling runtime.",
+  "Search docs for RAG design in MMagent.",
   "Web search: FastAPI background tasks",
   "Add todo: prepare MMagent demo for interview",
   "List todos"
@@ -36,6 +36,7 @@ export default function App() {
   const [selectedRunIndex, setSelectedRunIndex] = useState<number>(-1);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { tools, loading: toolsLoading, error: toolsError } = useTools();
   const conversationRequestRef = useRef(0);
@@ -158,6 +159,7 @@ export default function App() {
 
   async function handleSend(message: string) {
     setLoading(true);
+    setPendingUserMessage(message);
     setError(null);
     try {
       const response = await chat({
@@ -172,6 +174,7 @@ export default function App() {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {
       setLoading(false);
+      setPendingUserMessage(null);
     }
   }
 
@@ -293,6 +296,7 @@ export default function App() {
                   runs={displayConversation?.runs ?? []}
                   loading={loading}
                   historyLoading={historyLoading}
+                  pendingUserMessage={pendingUserMessage}
                   error={error}
                   starterPrompts={starterPrompts}
                   onSend={handleSend}
