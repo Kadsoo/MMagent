@@ -152,15 +152,86 @@ class AgentRuntime:
 
     @staticmethod
     def _parse_model_output(raw_output: str) -> ToolCall | FinalAnswer:
-        content = raw_output.strip()
-        if content.startswith("```"):
-            lines = [line for line in content.splitlines() if not line.startswith("```")]
-            content = "\n".join(lines).strip()
-
-        payload: dict[str, Any] = json.loads(content)
+        content = _normalize_model_json(raw_output)
+        try:
+            payload: dict[str, Any] = json.loads(content)
+        except json.JSONDecodeError:
+            payload = json.loads(_escape_newlines_in_json_strings(content))
         output_type = payload.get("type")
         if output_type == "tool_call":
             return ToolCall.model_validate(payload)
         if output_type == "final_answer":
             return FinalAnswer.model_validate(payload)
         raise ValueError(f"Unknown agent output type: {output_type}")
+
+
+def _normalize_model_json(raw_output: str) -> str:
+    content = raw_output.strip()
+    if content.startswith("```"):
+        lines = [line for line in content.splitlines() if not line.strip().startswith("```")]
+        content = "\n".join(lines).strip()
+    if content.startswith("{") and content.endswith("}"):
+        return content
+    return _extract_first_json_object(content)
+
+
+def _extract_first_json_object(content: str) -> str:
+    start = content.find("{")
+    if start < 0:
+        return content
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(content)):
+        char = content[index]
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and in_string:
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return content[start : index + 1].strip()
+    return content[start:].strip()
+
+
+def _escape_newlines_in_json_strings(content: str) -> str:
+    result: list[str] = []
+    in_string = False
+    escaped = False
+
+    for char in content:
+        if escaped:
+            result.append(char)
+            escaped = False
+            continue
+        if char == "\\" and in_string:
+            result.append(char)
+            escaped = True
+            continue
+        if char == '"':
+            result.append(char)
+            in_string = not in_string
+            continue
+        if in_string and char == "\n":
+            result.append("\\n")
+            continue
+        if in_string and char == "\r":
+            result.append("\\r")
+            continue
+        if in_string and char == "\t":
+            result.append("\\t")
+            continue
+        result.append(char)
+
+    return "".join(result)

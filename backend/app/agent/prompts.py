@@ -15,9 +15,14 @@ def build_system_prompt(tools: list[ToolSpec]) -> str:
         '{"type":"tool_call","tool_name":"name","arguments":{},"thought":"why"}\n'
         "2. Final answer: "
         '{"type":"final_answer","answer":"answer for the user"}\n\n'
-        "Use tools when external data, calculation, documents, todos, or game-state "
+        "Use tools when external data, calculation, documents, todos, web search, or local knowledge "
         "lookups are needed. After receiving tool_result messages, continue reasoning "
         "until you can answer finally. Never invent tool results.\n\n"
+        "Output must be strict JSON.\n"
+        "The first character must be { and the last character must be }.\n"
+        "Do not output Markdown code fences.\n"
+        "Do not output natural language outside JSON.\n\n"
+        "JSON string values must not contain raw newlines. Use \\n instead.\n"
         "Available tools:\n"
         f"{json.dumps(tool_payload, ensure_ascii=False, indent=2)}"
     )

@@ -394,6 +394,45 @@ h1 {
   margin-bottom: 0;
 }
 
+.markdown-message {
+  display: grid;
+  gap: 10px;
+}
+
+.markdown-message h3,
+.markdown-message h4,
+.markdown-message p,
+.markdown-message ul,
+.markdown-message ol {
+  margin: 0;
+}
+
+.markdown-message h3 {
+  color: #17365d;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.markdown-message h4 {
+  color: #1f4f90;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.markdown-message ul,
+.markdown-message ol {
+  padding-left: 20px;
+}
+
+.markdown-message li + li {
+  margin-top: 5px;
+}
+
+.markdown-message strong {
+  color: #102f55;
+  font-weight: 800;
+}
+
 .user-bubble {
   justify-self: end;
   background: linear-gradient(180deg, #2563eb 0%, #1e40af 100%);

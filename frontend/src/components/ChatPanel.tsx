@@ -1,5 +1,6 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { ConversationRun } from "../types/api";
+import MarkdownMessage from "./MarkdownMessage";
 
 type ChatPanelProps = {
   runs: ConversationRun[];
@@ -107,7 +108,7 @@ export default function ChatPanel({
                 </div>
                 <div className="bubble agent-bubble">
                   <span>Agent final answer</span>
-                  <p>{run.final_answer}</p>
+                  <MarkdownMessage text={run.final_answer} />
                 </div>
                 <div className="turn-meta">
                   Round {index + 1} - {new Date(run.created_at).toLocaleString()}
